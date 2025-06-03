@@ -28,6 +28,53 @@ function toggleMagicApiOptions() {
     magicApiOptionsDiv.style.display = codeTypeEl.value === 'magic-api' ? 'block' : 'none';
 }
 
+// New function to process code and update UI
+// Added a 'source' parameter to better control name suggestion logic
+function processCodeAndSuggestName(code, suggestedName, source = '') {
+    if (!code) return; // Do nothing if code is empty
+
+    capturedCodeEl.value = code;
+
+    // Automatically detect code type
+    const lowerCaseCode = code.toLowerCase();
+    const isHtml = /<html|<\!doctype\s+html/i.test(lowerCaseCode);
+    const isMagicApi = /\/\/\s*magic-api:|db\.|request\.|response\.|env\.|magic\.|import\s+(db|http|log|request|response|env|magic);/i.test(lowerCaseCode) ||
+                     // Additional patterns for magic-api like function calls or common imports
+                     /import\s+org\.ssssssss/i.test(lowerCaseCode) ||
+                     /return\s+db\.(select|update|insert|page|table)/i.test(lowerCaseCode) ||
+                     /log\.(info|warn|error)/i.test(lowerCaseCode) ||
+                     /http\.connect/i.test(lowerCaseCode) ||
+                     /redis\.(set|get|hset)/i.test(lowerCaseCode) || // common redis ops
+                     /mongo\.database/i.test(lowerCaseCode); // common mongo ops
+
+    if (isHtml) {
+        codeTypeEl.value = "html";
+    } else if (isMagicApi) {
+        codeTypeEl.value = "magic-api";
+    } else {
+        // If it's neither clearly HTML nor Magic-API, default to magic-api
+        codeTypeEl.value = "magic-api";
+    }
+
+    // Auto-fill suggested name only if the field is empty,
+    // OR if the source is from a copy button click (which implies a fresh capture),
+    // OR if it's from SEND_CLIPBOARD_CONTENT (initial popup load, might be relevant text)
+    if (suggestedName && suggestedName.trim().length > 0 &&
+        (desiredNameEl.value.trim() === '' || source === "copy_button_click" || source === "clipboard_request_on_load")) {
+        desiredNameEl.value = suggestedName;
+        console.log("Magic AI: Desired name set to:", suggestedName, "Source:", source);
+    } else if (suggestedName && suggestedName.trim().length > 0) {
+        console.log("Magic AI: Suggested name ignored as field is not empty and not from forced source. Current name:", desiredNameEl.value.trim(), "Suggested:", suggestedName, "Source:", source);
+    } else {
+        console.log("Magic AI: No valid suggested name received or suggested name is empty.");
+    }
+
+
+    toggleMagicApiOptions();
+    displayStatus(statusMessageEl, '代码已捕获并处理。', false); // Indicate success
+}
+
+
 async function handleLogin() {
     const username = usernameEl.value.trim();
     const password = passwordEl.value;
@@ -71,9 +118,6 @@ async function handleLogin() {
 async function handleGenerateCode() {
     if (!authToken) {
         displayStatus(statusMessageEl, '错误: 请先登录。', true);
-        // Consider using a custom modal instead of alert for better UX in extensions
-        // For now, alert is kept as per original code, but it's not ideal.
-        // A custom modal would be part of the popup's HTML/CSS.
         const confirmLogin = document.createElement('div');
         confirmLogin.textContent = '请先登录后再执行操作。';
         confirmLogin.style.position = 'fixed';
@@ -148,30 +192,29 @@ async function handleGenerateCode() {
                         const httpMethodDisplay = actualResultData.httpMethod ? ` (${actualResultData.httpMethod})` : '';
                         outputHtml = `<p>Magic-API: <a href="${fullApiUrl}" target="_blank" title="${fullApiUrl}">${linkText}</a>${httpMethodDisplay}</p>`;
                     } else {
-                        // 如果结果类型未知或数据不完整
-                        // displayStatus(statusMessageEl, outerData.message && !actualResultData ? outerData.message : '结果类型未知或数据不完整。', true);
+                        // If result type is unknown or data is incomplete
                         if (outerData.message && (!actualResultData || !actualResultData.type)) {
-                             // 如果有第二层消息但没有更内层的数据或类型，可能本身就是最终消息
+                             // If there's a second-level message but no deeper data or type, it might be the final message itself
                         } else {
                              displayStatus(statusMessageEl, '结果类型未知或数据不完整。', true);
                         }
                     }
 
-                    resultLinkEl.innerHTML = outputHtml; //
+                    resultLinkEl.innerHTML = outputHtml;
                     if (outputHtml) {
-                        resultLinkEl.classList.remove('hidden'); //
+                        resultLinkEl.classList.remove('hidden');
                     } else {
-                        resultLinkEl.classList.add('hidden'); // 确保如果没有内容则隐藏
+                        resultLinkEl.classList.add('hidden');
                     }
 
-                } else { // 顶层 API 响应指示问题 (例如 apiResponse.code !== 200 或 apiResponse.data 不存在)
+                } else { // Top-level API response indicates a problem (e.g., apiResponse.code !== 200 or apiResponse.data doesn't exist)
                     const errorMsg = apiResponse ? (apiResponse.message || '未知API响应错误') : '未收到API响应';
                     const errorCode = apiResponse ? apiResponse.code : 'N/A';
                     displayStatus(statusMessageEl, `API调用失败: ${errorMsg} (Code: ${errorCode})`, true);
                     resultLinkEl.classList.add('hidden');
                     resultLinkEl.innerHTML = '';
                 }
-            } else { // response.success 为 false, 或 background.js 通信层面出错
+            } else { // response.success is false, or background.js communication error
                 displayStatus(statusMessageEl, `生成失败: ${response ? response.errorMessage : '未知后端或插件通信错误'}`, true);
                 resultLinkEl.classList.add('hidden');
                 resultLinkEl.innerHTML = '';
@@ -181,16 +224,21 @@ async function handleGenerateCode() {
     );
 }
 
+// Listen for messages from content script (e.g., from copy button click)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "CODE_CAPTURED_FROM_PAGE" && capturedCodeEl && request.code) {
-        capturedCodeEl.value = request.code;
-        const code = request.code.toLowerCase();
-        const isHtml = /<html|<\!doctype\s+html/i.test(code);
-        const isMagicApi = /\/\/\s*magic-api:|db\.|request\./i.test(code);
-        if (isHtml) codeTypeEl.value = "html";
-        else if (isMagicApi) codeTypeEl.value = "magic-api";
-        toggleMagicApiOptions();
-        sendResponse({status: "Code received and processed by popup"});
+        // Always process if the code is new or from a copy button click.
+        // The source parameter from content_script.js helps differentiate
+        const currentCode = capturedCodeEl.value.trim();
+        const newCode = request.code.trim();
+
+        if (currentCode !== newCode || request.source === "copy_button_click") {
+            processCodeAndSuggestName(request.code, request.suggestedName, request.source);
+            sendResponse({status: "Code received and processed by popup"});
+        } else {
+            console.log("Magic AI Popup: Received same code or not a force-update source. Skipping processing.");
+            sendResponse({status: "Code already present or not new."});
+        }
     }
 });
 
@@ -203,8 +251,40 @@ document.addEventListener('DOMContentLoaded', () => {
             displayStatus(loginStatusEl, '未登录。请先登录。', true);
         }
     });
+
+    // Request current page's selected text/simulated clipboard content from content script on popup load
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0] && tabs[0].id) {
+            chrome.tabs.sendMessage(tabs[0].id, { type: "SEND_CLIPBOARD_CONTENT" }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn("Error sending message to content script:", chrome.runtime.lastError.message);
+                    return;
+                }
+                if (response && response.success && response.code) {
+                    // Pass a source to indicate this is an initial load capture
+                    processCodeAndSuggestName(response.code, response.suggestedName, "clipboard_request_on_load");
+                    displayStatus(statusMessageEl, '已从当前页面捕获代码。', false);
+                } else if (response && !response.success) {
+                    console.log("Magic AI Popup: No code from clipboard request:", response.message);
+                } else {
+                    console.log("Magic AI Popup: No response or malformed response from clipboard request.");
+                }
+            });
+        }
+    });
+
     toggleMagicApiOptions();
 });
+
+// Listen for manual input/paste changes in the textarea
+capturedCodeEl.addEventListener('input', () => {
+    const currentCode = capturedCodeEl.value.trim();
+    // On manual input, force process and clear any previous suggested name as it's a new manual entry
+    processCodeAndSuggestName(currentCode, '', "manual_input");
+    displayStatus(statusMessageEl, '已手动粘贴/输入代码。', false);
+});
+
+
 codeTypeEl.addEventListener('change', toggleMagicApiOptions);
 generateButton.addEventListener('click', handleGenerateCode);
 loginButton.addEventListener('click', handleLogin);

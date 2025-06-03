@@ -2,7 +2,6 @@
 console.log("Magic AI: Content Script Loaded and Running. Timestamp:", new Date().toLocaleTimeString());
 
 function findCodeInPage() {
-    // console.log("Magic AI: findCodeInPage called");
     let bestCode = "";
     const preCodeBlocks = document.querySelectorAll('pre > code');
     if (preCodeBlocks.length > 0) {
@@ -13,13 +12,10 @@ function findCodeInPage() {
             preBlocks.forEach(block => { bestCode += block.innerText + "\n\n"; });
         }
     }
-    if (!bestCode.trim()) {
-        const selection = window.getSelection();
-        if (selection && selection.toString().trim().length > 0) {
-            bestCode = selection.toString();
-        }
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+        bestCode = selection.toString();
     }
-    // console.log("Magic AI: findCodeInPage found code length:", bestCode.trim().length);
     return bestCode.trim();
 }
 
@@ -101,70 +97,105 @@ function showCenteredNotification(message, type = 'info') {
     }, 3500);
 }
 
+// Function to extract a name from the page title or provided code (Enhanced for HTML title)
+function extractNameFromTitleOrCode(codeContent = '') {
+    const pageTitle = document.title;
+    console.log("Magic AI: Page title for name extraction (original):", pageTitle);
+    console.log("Magic AI: Code content for name extraction (first 100 chars):", codeContent.substring(0, 100));
+
+    // Helper to apply common name cleaning and capitalization
+    const cleanAndCapitalize = (name) => {
+        if (!name || name.trim().length === 0) return "";
+        let cleaned = name.trim();
+        // Remove common ending phrases (e.g., "- 文档", "教程", "页面")
+        cleaned = cleaned.replace(/(?:\s*[-–—]\s*)?(文档|教程|指南|介绍|详情|页面)$/i, '').trim();
+        // Remove common leading prefixes (e.g., "Magic-API ", "API ", "Web ", "App ")
+        cleaned = cleaned.replace(/^(?:magic-api\s*|API\s*|Web\s*|App\s*)/i, '').trim();
+        // Capitalize first letter of each word
+        return cleaned.replace(/\b\w/g, char => char.toUpperCase());
+    };
+
+    // 1. Try to extract from provided HTML code first (Highest priority for HTML title)
+    if (codeContent) {
+        const isHtmlCode = /<html|<\!doctype\s+html/i.test(codeContent.toLowerCase());
+        if (isHtmlCode) {
+            const titleMatch = codeContent.match(/<title>(.*?)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+                let htmlTitle = titleMatch[1].trim();
+                console.log("Magic AI: Extracted HTML title from code (raw):", htmlTitle);
+                
+                // Apply cleaning and capitalization specific to HTML title
+                let processedHtmlTitle = cleanAndCapitalize(htmlTitle);
+                if (processedHtmlTitle.length > 0 && processedHtmlTitle.length <= 100) {
+                    console.log("Magic AI: Final extracted HTML title from code (processed):", processedHtmlTitle);
+                    return processedHtmlTitle;
+                }
+            }
+        }
+    }
+
+    // 2. Fallback to current page title (for non-HTML code or if HTML title not found)
+    // This part should also use the refined cleaning helper
+    let suggestedNameFromPageTitle = cleanAndCapitalize(pageTitle);
+    if (suggestedNameFromPageTitle.length > 0 && suggestedNameFromPageTitle.length <= 100) {
+        console.log("Magic AI: Final extracted from Page Title (processed):", suggestedNameFromPageTitle);
+        return suggestedNameFromPageTitle;
+    }
+
+    console.log("Magic AI: No suitable name extracted.");
+    return "";
+}
+
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log("Magic AI: Message received in content_script:", request);
     if (request.type === "REQUEST_CODE_FROM_PAGE_VIA_CONTENT_SCRIPT") {
-        const code = findCodeInPage();
+        const code = findCodeInPage(); // This is the selected text or pre/code block content
         if (code) {
-            sendResponse({ success: true, code: code });
+            // Pass the code content to the extraction function
+            sendResponse({ success: true, code: code, suggestedName: extractNameFromTitleOrCode(code) });
         } else {
             sendResponse({ success: false, message: "No suitable code blocks or selected text found on the page." });
+        }
+        return true; // Keep the message channel open for async response
+    } else if (request.type === "SEND_CLIPBOARD_CONTENT") {
+        const code = window.getSelection().toString().trim(); // This is the selected text
+        if (code) {
+            // Pass the selected text to the extraction function
+            sendResponse({ success: true, code: code, suggestedName: extractNameFromTitleOrCode(code) });
+        } else {
+            sendResponse({ success: false, message: "No text selected to simulate clipboard content." });
         }
         return true;
     }
 });
 
-function sendCodeToPopup(code) {
-    console.log("Magic AI: sendCodeToPopup called with code length:", code ? code.length : 'null/empty');
-    if (code) {
-        chrome.runtime.sendMessage({ type: "CODE_CAPTURED_FROM_PAGE", code: code }, (response) => {
-            console.log("Magic AI: sendMessage callback. Response:", response, "LastError:", chrome.runtime.lastError);
-            if (chrome.runtime.lastError) {
-                if (chrome.runtime.lastError.message === "The message port closed before a response was received.") {
-                    showCenteredNotification('代码已捕获！(弹窗关闭时不会实时更新)', 'info');
-                } else {
-                    showCenteredNotification("发送代码到插件弹窗时出错: " + chrome.runtime.lastError.message, 'error');
-                }
-            } else if (response && response.status === "Code received and processed by popup") {
-                showCenteredNotification('代码已捕获并发送到插件弹窗！', 'success');
-            } else {
-                showCenteredNotification('插件弹窗未正确响应代码。', 'info');
-            }
-        });
-    } else {
-        console.log("Magic AI: sendCodeToPopup called with no code.");
-        showCenteredNotification('未找到可捕获的代码。', 'info');
-    }
-}
-
-document.addEventListener('copy', () => {
-    console.log("Magic AI: 'copy' event detected.");
-    setTimeout(() => {
-        const selectedText = window.getSelection().toString().trim();
-        console.log("Magic AI: Text selected on copy:", selectedText ? selectedText.substring(0, 100) + "..." : "EMPTY_SELECTION", "Length:", selectedText.length);
-        if (selectedText) {
-            sendCodeToPopup(selectedText);
-        } else {
-            console.log("Magic AI: No text selected during copy event or selection is empty.");
-            // Optionally: showCenteredNotification('复制操作已执行，但未选择任何文本。', 'info');
-        }
-    }, 50);
-});
-console.log("Magic AI: 'copy' event listener added.");
-
 document.addEventListener('click', function(event) {
-    // console.log("Magic AI: 'click' event detected on target:", event.target);
     const targetIcon = event.target.closest('mat-icon[fonticon="content_copy"], mat-icon[data-mat-icon-name="content_copy"]');
     if (targetIcon) {
         console.log("Magic AI: Detected click on a 'content_copy' mat-icon:", targetIcon);
         setTimeout(() => {
-            const codeToCapture = findCodeInPage();
+            const codeToCapture = findCodeInPage(); // This is the code captured by the button click
             console.log("Magic AI: Code to capture after icon click:", codeToCapture ? codeToCapture.substring(0,100) + "..." : "NO_CODE_FOUND", "Length:", codeToCapture.length);
             if (codeToCapture) {
-                sendCodeToPopup(codeToCapture);
+                // Pass the captured code to the extraction function
+                const suggestedName = extractNameFromTitleOrCode(codeToCapture);
+                chrome.runtime.sendMessage({ type: "CODE_CAPTURED_FROM_PAGE", code: codeToCapture, suggestedName: suggestedName, source: "copy_button_click" }, (response) => {
+                    console.log("Magic AI: sendMessage callback for copy button. Response:", response, "LastError:", chrome.runtime.lastError);
+                    if (chrome.runtime.lastError) {
+                        if (chrome.runtime.lastError.message === "The message port closed before a response was received.") {
+                            showCenteredNotification('代码已捕获！(弹窗关闭时不会实时更新)', 'info');
+                        } else {
+                            showCenteredNotification("发送代码到插件弹窗时出错: " + chrome.runtime.lastError.message, 'error');
+                        }
+                    } else if (response && response.status === "Code received and processed by popup") {
+                        showCenteredNotification('代码已捕获并发送到插件弹窗！', 'success');
+                    } else {
+                        showCenteredNotification('插件弹窗未正确响应代码。', 'info');
+                    }
+                });
             } else {
                 console.log("Magic AI: Copy icon clicked, but no code found by findCodeInPage.");
-                // showCenteredNotification('复制图标已点击，但未找到可捕获的代码。', 'info');
             }
         }, 100);
     }
@@ -174,11 +205,9 @@ console.log("Magic AI: 'click' event listener for mat-icon added.");
 
 // content_script.js (扩展iframe模态框功能)
 
-// --- In-Page Plugin UI (Iframe Modal with Drag, Resize, Close) ---
-
 let pluginIframe = null;
 let iframeOverlay = null;
-let iframeContainer = null; // Changed to be globally accessible for drag/resize
+let iframeContainer = null;
 const IFRAME_ID = 'magic-ai-plugin-iframe';
 const OVERLAY_ID = 'magic-ai-plugin-overlay';
 const CONTAINER_ID = 'magic-ai-plugin-container';
@@ -186,23 +215,20 @@ const HEADER_ID = 'magic-ai-plugin-header';
 const RESIZE_HANDLE_ID = 'magic-ai-plugin-resize-handle';
 const OPEN_BUTTON_ID = 'magic-ai-open-plugin-button';
 
-// Drag state
 let isDragging = false;
 let dragOffsetX, dragOffsetY;
 
-// Resize state
 let isResizing = false;
 let resizeInitialWidth, resizeInitialHeight, resizeInitialMouseX, resizeInitialMouseY;
-const MIN_PLUGIN_WIDTH = 350; // 最小宽度
-const MIN_PLUGIN_HEIGHT = 300; // 最小高度 (需要考虑header)
+const MIN_PLUGIN_WIDTH = 350;
+const MIN_PLUGIN_HEIGHT = 300;
 
 function createPluginModalStructure() {
     if (document.getElementById(CONTAINER_ID)) {
-        return; // Structure already exists
+        return;
     }
     console.log("Magic AI: Creating plugin modal structure.");
 
-    // 1. Create Overlay
     iframeOverlay = document.createElement('div');
     iframeOverlay.id = OVERLAY_ID;
     Object.assign(iframeOverlay.style, {
@@ -210,30 +236,28 @@ function createPluginModalStructure() {
         backgroundColor: 'rgba(0, 0, 0, 0.4)', zIndex: '2147483645', display: 'none'
     });
     document.body.appendChild(iframeOverlay);
-    iframeOverlay.addEventListener('click', () => togglePluginUI(false)); // Click overlay to close
+    iframeOverlay.addEventListener('click', () => togglePluginUI(false));
 
-    // 2. Create Iframe Container
     iframeContainer = document.createElement('div');
     iframeContainer.id = CONTAINER_ID;
     Object.assign(iframeContainer.style, {
         position: 'fixed', top: '50%', left: '50%',
-        transform: 'translate(-50%, -50%)', // Initial centering
-        width: '440px', // Initial width, slightly more than popup content
-        height: '630px', // Initial height (includes header)
+        transform: 'translate(-50%, -50%)',
+        width: '440px',
+        height: '630px',
         zIndex: '2147483646', boxShadow: '0 5px 25px rgba(0,0,0,0.25)',
         borderRadius: '8px', overflow: 'hidden', display: 'none',
-        backgroundColor: '#ffffff', // Container background
-        display: 'flex', flexDirection: 'column' // For header + iframe layout
+        backgroundColor: '#ffffff',
+        display: 'flex', flexDirection: 'column'
     });
 
-    // 3. Create Header (for Dragging and Close Button)
     const headerDiv = document.createElement('div');
     headerDiv.id = HEADER_ID;
     Object.assign(headerDiv.style, {
         height: '35px', backgroundColor: '#f0f0f0', cursor: 'move',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 10px', borderBottom: '1px solid #e0e0e0',
-        userSelect: 'none' // Prevent text selection when dragging header
+        userSelect: 'none'
     });
 
     const titleSpan = document.createElement('span');
@@ -243,49 +267,41 @@ function createPluginModalStructure() {
     headerDiv.appendChild(titleSpan);
 
     const closeButton = document.createElement('button');
-    closeButton.innerHTML = '&times;'; // Close symbol
+    closeButton.innerHTML = '&times;';
     Object.assign(closeButton.style, {
         background: 'transparent', border: 'none', fontSize: '22px',
         cursor: 'pointer', color: '#555', padding: '0 5px', lineHeight: '1'
     });
     closeButton.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent header's mousedown if close is part of header
+        e.stopPropagation();
         togglePluginUI(false);
     });
     headerDiv.appendChild(closeButton);
     iframeContainer.appendChild(headerDiv);
 
-    // 4. Create Iframe
     pluginIframe = document.createElement('iframe');
     pluginIframe.id = IFRAME_ID;
     pluginIframe.src = chrome.runtime.getURL('popup.html');
     Object.assign(pluginIframe.style, {
-        flexGrow: '1', // Iframe takes remaining space in flex container
-        border: 'none', display: 'block', width: '100%' // Iframe width is 100% of container
-        // Height will be implicitly set by flex-grow
+        flexGrow: '1',
+        border: 'none', display: 'block', width: '100%'
     });
     iframeContainer.appendChild(pluginIframe);
 
-    // 5. Create Resize Handle
     const resizeHandle = document.createElement('div');
     resizeHandle.id = RESIZE_HANDLE_ID;
     Object.assign(resizeHandle.style, {
         width: '14px', height: '14px',
-        // Simple diagonal lines for grip, or use an SVG/image
         backgroundImage: 'linear-gradient(135deg, #aaa 25%, transparent 25%, transparent 50%, #aaa 50%, #aaa 75%, transparent 75%, transparent)',
-        position: 'absolute', right: '0px', bottom: '0px', cursor: 'se-resize', zIndex: '1' // z-index relative to container
+        position: 'absolute', right: '0px', bottom: '0px', cursor: 'se-resize', zIndex: '1'
     });
-    iframeContainer.appendChild(resizeHandle); // Append to container, not header
+    iframeContainer.appendChild(resizeHandle);
 
     document.body.appendChild(iframeContainer);
 
-    // --- Attach Event Listeners ---
-    // Dragging
     headerDiv.addEventListener('mousedown', onDragMouseDown);
-    // Resizing
     resizeHandle.addEventListener('mousedown', onResizeMouseDown);
 
-    // Communication from iframe
     window.addEventListener('message', function(event) {
         if (event.source !== pluginIframe.contentWindow) return;
         if (event.data && event.data.type === 'magicPluginCloseRequest') {
@@ -295,25 +311,22 @@ function createPluginModalStructure() {
 }
 
 function onDragMouseDown(e) {
-    // Prevent dragging if clicking on the close button itself
     if (e.target.tagName === 'BUTTON' || e.target.parentNode.tagName === 'BUTTON') return;
 
     isDragging = true;
-    iframeContainer.style.userSelect = 'none'; // Prevent text selection on iframe during drag
+    iframeContainer.style.userSelect = 'none';
 
-    // If centered with transform, calculate initial absolute position
     if (iframeContainer.style.transform.includes('translate')) {
         const rect = iframeContainer.getBoundingClientRect();
         iframeContainer.style.left = `${rect.left}px`;
         iframeContainer.style.top = `${rect.top}px`;
-        iframeContainer.style.transform = ''; // Remove transform for direct positioning
+        iframeContainer.style.transform = '';
     }
     dragOffsetX = e.clientX - iframeContainer.offsetLeft;
     dragOffsetY = e.clientY - iframeContainer.offsetTop;
 
     document.addEventListener('mousemove', onDragMouseMove);
     document.addEventListener('mouseup', onDragMouseUp);
-    // e.preventDefault(); // Can prevent focus changes, be careful
 }
 
 function onDragMouseMove(e) {
@@ -321,7 +334,6 @@ function onDragMouseMove(e) {
     let newX = e.clientX - dragOffsetX;
     let newY = e.clientY - dragOffsetY;
 
-    // Boundary checks (optional, to keep it within viewport)
     const containerWidth = iframeContainer.offsetWidth;
     const containerHeight = iframeContainer.offsetHeight;
     newX = Math.max(0, Math.min(newX, window.innerWidth - containerWidth));
@@ -344,7 +356,7 @@ function onResizeMouseDown(e) {
     resizeInitialHeight = iframeContainer.offsetHeight;
     resizeInitialMouseX = e.clientX;
     resizeInitialMouseY = e.clientY;
-    iframeContainer.style.userSelect = 'none'; // Prevent text selection on iframe during resize
+    iframeContainer.style.userSelect = 'none';
 
     document.addEventListener('mousemove', onResizeMouseMove);
     document.addEventListener('mouseup', onResizeMouseUp);
@@ -363,15 +375,10 @@ function onResizeMouseMove(e) {
     const headerHeight = document.getElementById(HEADER_ID) ? document.getElementById(HEADER_ID).offsetHeight : 35;
 
     newWidth = Math.max(MIN_PLUGIN_WIDTH, newWidth);
-    newHeight = Math.max(MIN_PLUGIN_HEIGHT + headerHeight, newHeight); // Min height should account for header
+    newHeight = Math.max(MIN_PLUGIN_HEIGHT + headerHeight, newHeight);
 
     iframeContainer.style.width = `${newWidth}px`;
     iframeContainer.style.height = `${newHeight}px`;
-
-    // Iframe width is 100% of container, height is container height minus header
-    // pluginIframe.style.height will be handled by flexGrow if its parent (iframeContainer) has explicit height
-    // and flexDirection is column. The iframe itself is set to flex-grow: 1.
-    // So, we only need to ensure container has the correct height.
 }
 
 function onResizeMouseUp() {
@@ -382,14 +389,13 @@ function onResizeMouseUp() {
 }
 
 function togglePluginUI(forceState) {
-    if (!iframeContainer || !iframeOverlay) { // If structure not created yet
+    if (!iframeContainer || !iframeOverlay) {
         if (forceState === true || (typeof forceState === 'undefined' && (!iframeContainer || iframeContainer.style.display === 'none'))) {
-            createPluginModalStructure(); // Create it
-            // Ensure elements are ready before trying to access them for display logic
+            createPluginModalStructure();
              setTimeout(() => {
-                if (iframeContainer && iframeOverlay) { // Check again after creation
+                if (iframeContainer && iframeOverlay) {
                     iframeOverlay.style.display = 'block';
-                    iframeContainer.style.display = 'flex'; // Changed from 'block' to 'flex'
+                    iframeContainer.style.display = 'flex';
                     console.log("Magic AI: Plugin UI (iframe) shown.");
                 }
              }, 0);
@@ -401,7 +407,7 @@ function togglePluginUI(forceState) {
 
     if (shouldBeVisible) {
         iframeOverlay.style.display = 'block';
-        iframeContainer.style.display = 'flex'; // Use 'flex' due to flexDirection: 'column'
+        iframeContainer.style.display = 'flex';
         console.log("Magic AI: Plugin UI (iframe) shown.");
     } else {
         iframeOverlay.style.display = 'none';
@@ -434,8 +440,6 @@ function injectOpenPluginButton() {
     console.log("Magic AI: Open plugin button injected.");
 }
 
-// --- Initialization ---
-// Ensure all other event listeners (copy, specific icon click) are defined before this if they are separate
 if (document.readyState === "complete" || document.readyState === "interactive") {
     injectOpenPluginButton();
 } else {
