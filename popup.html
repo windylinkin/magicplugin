@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Magic AI 代码生成器</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <h3>从大模型生成代码</h3>
+        <div class="form-group">
+            <label for="capturedCode">捕获/粘贴的代码 (内容脚本会自动填充):</label>
+            <textarea id="capturedCode" rows="8" placeholder="等待内容脚本填充，或手动粘贴..."></textarea>
+        </div>
+        <div class="form-group">
+            <label for="codeType">代码类型 (会自动识别):</label>
+            <select id="codeType">
+                <option value="magic-api">Magic-API 脚本</option>
+                <option value="html">HTML 页面</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="desiredName">名称 (用于文件名或API名):</label>
+            <input type="text" id="desiredName" placeholder="例如: MyNewPage 或 GetUserDetails">
+        </div>
+        <div id="magicApiOptions">
+            <div class="form-group">
+                <label for="apiPath">API 路径 (在 /api/ai/ 之后):</label>
+                <input type="text" id="apiPath" placeholder="例如: /users 或 /product/info">
+            </div>
+            <div class="form-group">
+                <label for="httpMethod">HTTP 方法:</label>
+                <select id="httpMethod">
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="DELETE">DELETE</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="apiGroupId">分组ID (可选):</label>
+                <input type="text" id="apiGroupId" placeholder="Magic-API分组ID">
+            </div>
+        </div>
+        <button id="generateButton">生成到系统</button>
+        <div id="statusMessage" class="status hidden"></div>
+        <div id="resultLink" class="result hidden"></div>
+        <hr>
+        <h4>登录 (Token 会被存储)</h4>
+        <div class="form-group">
+            <label for="username">用户名:</label>
+            <input type="text" id="username" value="admin">
+        </div>
+        <div class="form-group">
+            <label for="password">密码:</label>
+            <input type="password" id="password">
+        </div>
+        <button id="loginButton">登录/刷新Token</button>
+        <div id="loginStatus" class="status hidden"></div>
+    </div>
+    <script src="crypto-js.min.js"></script> 
+    <script src="popup.js"></script>
+</body>
+</html>

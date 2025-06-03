@@ -1,0 +1,27 @@
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; width: 420px; padding: 15px; background-color: #f4f6f8; font-size: 14px; }
+.container { display: flex; flex-direction: column; gap: 10px; }
+.form-group { margin-bottom: 10px; }
+label { display: block; margin-bottom: 5px; font-weight: 500; color: #333; }
+input[type="text"], input[type="password"], textarea, select {
+    width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+input[type="text"]:focus, input[type="password"]:focus, textarea:focus, select:focus {
+    border-color: #007bff; box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2); outline: none;
+}
+textarea { min-height: 100px; resize: vertical; font-family: Menlo, Monaco, Consolas, "Courier New", monospace; }
+button {
+    padding: 10px 18px; background-color: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;
+    transition: background-color 0.2s; display: inline-block; text-align: center;
+}
+button:hover { background-color: #0056b3; }
+button:disabled { background-color: #e9ecef; color: #6c757d; cursor: not-allowed; }
+.status { margin-top: 8px; padding: 10px; border-radius: 4px; font-size: 13px; border-width: 1px; border-style: solid; }
+.hidden { display: none; }
+.success { background-color: #d1e7dd; color: #0f5132; border-color: #badbcc;}
+.error { background-color: #f8d7da; color: #842029; border-color: #f5c2c7;}
+.result { margin-top:10px; padding:10px; background-color:#e9ecef; border-radius:4px; font-size:13px; }
+.result a { color: #0069d9; text-decoration: none; font-weight: 500; }
+.result a:hover { text-decoration: underline; }
+hr { margin: 20px 0; border: 0; border-top: 1px solid #e1e4e8; }
+h3, h4 { margin-top: 0; margin-bottom: 10px; color: #0056b3; } h4 {font-size: 1.1em;}

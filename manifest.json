@@ -1,0 +1,38 @@
+{
+    "manifest_version": 3,
+    "name": "Magic AI Code Generator",
+    "version": "0.1.1", 
+    "description": "从大模型对话中捕获代码，并自动调用后端接口生成Magic-API脚本或HTML页面。",
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "permissions": [
+        "activeTab",
+        "storage",
+        "scripting"
+    ],
+    "host_permissions": [
+        "https://jiesuan.jujia618.com/*" 
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": ["https://*.openai.com/*", "https://bard.google.com/*", "https://claude.ai/*", "<all_urls>"],
+            "js": ["content_script.js"],
+            "css": ["content_style.css"],
+            "run_at": "document_idle"
+        }
+    ]
+}

@@ -1,0 +1,23 @@
+/* content_style.css */
+/* Styles for elements injected by content_script.js, if any */
+/* For example, if you chose to style the injected button via this CSS file: */
+/*
+#magic-ai-page-capture-btn {
+    position: fixed;
+    bottom: 15px;
+    right: 15px;
+    z-index: 2147483647;
+    padding: 8px 12px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    box-shadow: 0px 2px 10px rgba(0,0,0,0.2);
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+#magic-ai-page-capture-btn:hover {
+    background-color: #0056b3;
+}
+*/
