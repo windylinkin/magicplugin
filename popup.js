@@ -118,24 +118,63 @@ async function handleGenerateCode() {
     chrome.runtime.sendMessage(
         { type: "GENERATE_CODE", payload: payload, token: authToken },
         (response) => {
+            // console.log("Response from background:", JSON.stringify(response, null, 2)); // 调试时可以取消注释查看完整响应
             if (chrome.runtime.lastError) {
                 displayStatus(statusMessageEl, `请求发送失败: ${chrome.runtime.lastError.message}`, true);
-                generateButton.disabled = false; return;
+                generateButton.disabled = false;
+                return;
             }
+
             if (response && response.success) {
-                const resData = response.data.data; // Accessing the innermost data
-                displayStatus(statusMessageEl, resData.message || '代码已成功部署！', false);
-                let outputHtml = '';
-                if (resData.type === 'html' && resData.url) {
-                    outputHtml = `<p>HTML页面: <a href="${resData.url}" target="_blank">${resData.url}</a></p>`;
-                } else if (resData.type === 'magic-api' && resData.apiPath) {
-                    const fullApiUrl = `https://jiesuan.jujia618.com${resData.apiPath}`;
-                    outputHtml = `<p>Magic-API: <a href="${fullApiUrl}" target="_blank">${resData.apiPath}</a> (${resData.httpMethod})</p>`;
+                const apiResponse = response.data; // apiResponse 是后端返回的完整JSON对象
+
+                // 检查顶层API响应是否成功
+                if (apiResponse && apiResponse.code === 200 && apiResponse.data) {
+                    const outerData = apiResponse.data; // 这是 { "code": 200, "message": "HTML page generated successfully.", "data": { ... } }
+                    
+                    // 显示来自第二层级的消息，例如 "HTML page generated successfully."
+                    displayStatus(statusMessageEl, outerData.message || apiResponse.message || '操作成功！', false);
+
+                    const actualResultData = outerData.data; // 这是 { "type": "html", "fileName": "...", "url": "...", ... }
+
+                    let outputHtml = '';
+                    if (actualResultData && actualResultData.type === 'html' && actualResultData.url) {
+                        // 使用 fileName 作为链接文本（如果存在），否则使用 URL 本身
+                        const linkText = actualResultData.fileName || actualResultData.url;
+                        outputHtml = `<p>HTML页面: <a href="${actualResultData.url}" target="_blank" title="${actualResultData.url}">${linkText}</a></p>`;
+                    } else if (actualResultData && actualResultData.type === 'magic-api' && actualResultData.apiPath) {
+                        const fullApiUrl = `https://jiesuan.jujia618.com${actualResultData.apiPath}`;
+                        const linkText = actualResultData.apiPath;
+                        const httpMethodDisplay = actualResultData.httpMethod ? ` (${actualResultData.httpMethod})` : '';
+                        outputHtml = `<p>Magic-API: <a href="${fullApiUrl}" target="_blank" title="${fullApiUrl}">${linkText}</a>${httpMethodDisplay}</p>`;
+                    } else {
+                        // 如果结果类型未知或数据不完整
+                        // displayStatus(statusMessageEl, outerData.message && !actualResultData ? outerData.message : '结果类型未知或数据不完整。', true);
+                        if (outerData.message && (!actualResultData || !actualResultData.type)) {
+                             // 如果有第二层消息但没有更内层的数据或类型，可能本身就是最终消息
+                        } else {
+                             displayStatus(statusMessageEl, '结果类型未知或数据不完整。', true);
+                        }
+                    }
+
+                    resultLinkEl.innerHTML = outputHtml; //
+                    if (outputHtml) {
+                        resultLinkEl.classList.remove('hidden'); //
+                    } else {
+                        resultLinkEl.classList.add('hidden'); // 确保如果没有内容则隐藏
+                    }
+
+                } else { // 顶层 API 响应指示问题 (例如 apiResponse.code !== 200 或 apiResponse.data 不存在)
+                    const errorMsg = apiResponse ? (apiResponse.message || '未知API响应错误') : '未收到API响应';
+                    const errorCode = apiResponse ? apiResponse.code : 'N/A';
+                    displayStatus(statusMessageEl, `API调用失败: ${errorMsg} (Code: ${errorCode})`, true);
+                    resultLinkEl.classList.add('hidden');
+                    resultLinkEl.innerHTML = '';
                 }
-                resultLinkEl.innerHTML = outputHtml;
-                resultLinkEl.classList.remove('hidden');
-            } else {
-                displayStatus(statusMessageEl, `生成失败: ${response ? response.errorMessage : '未知后端错误'}`, true);
+            } else { // response.success 为 false, 或 background.js 通信层面出错
+                displayStatus(statusMessageEl, `生成失败: ${response ? response.errorMessage : '未知后端或插件通信错误'}`, true);
+                resultLinkEl.classList.add('hidden');
+                resultLinkEl.innerHTML = '';
             }
             generateButton.disabled = false;
         }
