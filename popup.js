@@ -107,7 +107,7 @@ async function handleGenerateCode() {
 
     const payload = {
         codeContent: codeContent, codeType: type, desiredName: name,
-        apiPath: type === 'magic-api' ? path : undefined,
+        apiPathA: type === 'magic-api' ? path : undefined,
         httpMethod: type === 'magic-api' ? method : undefined,
         apiGroupId: type === 'magic-api' && groupId ? groupId : undefined,
     };
