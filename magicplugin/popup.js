@@ -1,325 +1,210 @@
-// Ensure the DOM is fully loaded before running the script
-document.addEventListener('DOMContentLoaded', () => {
-    // Get references to the input fields and buttons from the popup HTML
-    const nameInput = document.getElementById('name');
-    const codeInput = document.getElementById('code');
-    const createBtn = document.getElementById('createBtn');
-    const messageDiv = document.getElementById('message'); 
+// popup.js
+const capturedCodeEl = document.getElementById('capturedCode');
+const codeTypeEl = document.getElementById('codeType');
+const desiredNameEl = document.getElementById('desiredName');
+const apiPathEl = document.getElementById('apiPath');
+const httpMethodEl = document.getElementById('httpMethod');
+const apiGroupIdEl = document.getElementById('apiGroupId');
+const magicApiOptionsDiv = document.getElementById('magicApiOptions');
+const generateButton = document.getElementById('generateButton');
+const statusMessageEl = document.getElementById('statusMessage');
+const resultLinkEl = document.getElementById('resultLink');
+const usernameEl = document.getElementById('username');
+const passwordEl = document.getElementById('password');
+const loginButton = document.getElementById('loginButton');
+const loginStatusEl = document.getElementById('loginStatus');
 
-    // Function to display messages to the user
-    function showMessage(text, type = 'info') {
-        if (messageDiv) {
-            messageDiv.textContent = text;
-            messageDiv.className = type; // Apply 'success' or 'error' class for styling
-            messageDiv.style.display = 'block';
-            console.log(`Message to user: ${text} (type: ${type})`);
+const LOGIN_API_URL = 'https://jiesuan.jujia618.com/system/security/login';
+const CODEGEN_API_URL = 'https://jiesuan.jujia618.com/system/codegen/generate_from_llm';
+let authToken = null;
+
+function displayStatus(element, message, isError) {
+    element.textContent = message;
+    element.className = 'status ' + (isError ? 'error' : 'success');
+    element.classList.remove('hidden');
+}
+
+function toggleMagicApiOptions() {
+    magicApiOptionsDiv.style.display = codeTypeEl.value === 'magic-api' ? 'block' : 'none';
+}
+
+async function handleLogin() {
+    const username = usernameEl.value.trim();
+    const password = passwordEl.value;
+    if (!username || !password) {
+        displayStatus(loginStatusEl, '请输入用户名和密码。', true);
+        return;
+    }
+    displayStatus(loginStatusEl, '登录中...', false);
+    loginButton.disabled = true;
+    try {
+        if (typeof CryptoJS === 'undefined') {
+            displayStatus(loginStatusEl, '加密库加载失败。', true);
+            loginButton.disabled = false; return;
+        }
+        const hashedPassword = CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex);
+        const response = await fetch(LOGIN_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username, password: hashedPassword })
+        });
+        const result = await response.json();
+        if (response.ok && result.code === 200 && result.data) {
+            authToken = result.data;
+            chrome.storage.local.set({ authToken: authToken }, () => {
+                displayStatus(loginStatusEl, '登录成功！Token已更新。', false);
+            });
         } else {
-            // Fallback if messageDiv is not found in the HTML
-            console.log(`Message area (id='message') not found. UI Message: ${text} (type: ${type})`);
+            authToken = null;
+            chrome.storage.local.remove('authToken');
+            displayStatus(loginStatusEl, `登录失败: ${result.message || '未知错误'}`, true);
         }
+    } catch (error) {
+        authToken = null;
+        chrome.storage.local.remove('authToken');
+        displayStatus(loginStatusEl, `登录请求错误: ${error.message}`, true);
+    } finally {
+        loginButton.disabled = false;
     }
-    
-    // Initial check for essential elements
-    if (!codeInput) {
-        const errorMsg = "关键元素 'codeInput' (id='code') 未在 popup.html 中找到。粘贴功能将无法工作。";
-        console.error(errorMsg);
-        if (messageDiv) showMessage("错误: 代码输入区域未找到!", 'error');
-        else alert(errorMsg); // Fallback alert if messageDiv is also missing
-        return; // Stop further execution if codeInput is missing as it's critical
-    }
-    if (!nameInput) {
-        console.warn("元素 'nameInput' (id='name') 未在 popup.html 中找到。将无法自动填充名称。");
-    }
-    if (!createBtn) {
-        const errorMsg = "关键元素 'createBtn' (id='createBtn') 未在 popup.html 中找到。创建链接功能将无法工作。";
-        console.error(errorMsg);
-        if (messageDiv) showMessage("错误: 创建按钮未找到!", 'error');
-    }
-    if (!messageDiv) {
-        console.warn("元素 'messageDiv' (id='message') 未在 popup.html 中找到。状态消息将仅输出到控制台。");
-    }
+}
 
+async function handleGenerateCode() {
+    if (!authToken) {
+        displayStatus(statusMessageEl, '错误: 请先登录。', true);
+        // Consider using a custom modal instead of alert for better UX in extensions
+        // For now, alert is kept as per original code, but it's not ideal.
+        // A custom modal would be part of the popup's HTML/CSS.
+        const confirmLogin = document.createElement('div');
+        confirmLogin.textContent = '请先登录后再执行操作。';
+        confirmLogin.style.position = 'fixed';
+        confirmLogin.style.top = '50%';
+        confirmLogin.style.left = '50%';
+        confirmLogin.style.transform = 'translate(-50%, -50%)';
+        confirmLogin.style.backgroundColor = 'white';
+        confirmLogin.style.padding = '20px';
+        confirmLogin.style.border = '1px solid black';
+        confirmLogin.style.zIndex = '1000';
+        const okButton = document.createElement('button');
+        okButton.textContent = 'OK';
+        okButton.onclick = () => document.body.removeChild(confirmLogin);
+        confirmLogin.appendChild(okButton);
+        document.body.appendChild(confirmLogin);
+        return;
+    }
+    const codeContent = capturedCodeEl.value.trim();
+    const type = codeTypeEl.value;
+    const name = desiredNameEl.value.trim();
+    const path = apiPathEl.value.trim();
+    const method = httpMethodEl.value;
+    const groupId = apiGroupIdEl.value.trim();
 
-    // Function to create and show a temporary notification at the bottom of the popup
-    function showTemporaryNotification(message, duration = 3000) {
-        let notificationElement = document.getElementById('clipboardNotification');
-        if (!notificationElement) {
-            notificationElement = document.createElement('div');
-            notificationElement.id = 'clipboardNotification';
-            // Basic styling for the notification
-            notificationElement.style.position = 'fixed';
-            notificationElement.style.bottom = '10px';
-            notificationElement.style.left = '50%';
-            notificationElement.style.transform = 'translateX(-50%)';
-            notificationElement.style.padding = '10px 20px';
-            notificationElement.style.backgroundColor = '#28a745'; // Green background
-            notificationElement.style.color = 'white';
-            notificationElement.style.borderRadius = '5px';
-            notificationElement.style.zIndex = '10000';
-            notificationElement.style.fontSize = '14px';
-            notificationElement.style.opacity = '0';
-            notificationElement.style.transition = 'opacity 0.5s ease-in-out';
-            document.body.appendChild(notificationElement);
-        }
-
-        notificationElement.textContent = message;
-        notificationElement.style.display = 'block';
-        void notificationElement.offsetWidth; 
-        notificationElement.style.opacity = '1';
-
-        setTimeout(() => {
-            notificationElement.style.opacity = '0';
-            setTimeout(() => {
-                if (notificationElement.parentNode) {
-                    notificationElement.parentNode.removeChild(notificationElement);
-                }
-            }, 500); 
-        }, duration);
+    if (!codeContent) { displayStatus(statusMessageEl, '错误: "捕获/粘贴的代码"不能为空。', true); return; }
+    if (!name) { displayStatus(statusMessageEl, '错误: "名称"不能为空。', true); return; }
+    if (type === 'magic-api' && !path) { displayStatus(statusMessageEl, '错误: Magic-API 类型需要填写 "API 路径"。', true); return; }
+    if (type === 'magic-api' && (!path.startsWith("/") || path.includes(" ") || path.includes(".."))) {
+        displayStatus(statusMessageEl, '错误: Magic-API 路径必须以 "/" 开头，且不能包含空格或 ".."。', true); return;
     }
 
-    // Function to display a modal with the generated link
-    function showLinkModal(link) {
-        let modal = document.getElementById('generatedLinkModal');
-        if (modal && modal.parentNode) { 
-            modal.parentNode.removeChild(modal);
-        }
+    const payload = {
+        codeContent: codeContent, codeType: type, desiredName: name,
+        apiPathA: type === 'magic-api' ? path : undefined,
+        httpMethod: type === 'magic-api' ? method : undefined,
+        apiGroupId: type === 'magic-api' && groupId ? groupId : undefined,
+    };
+    displayStatus(statusMessageEl, '正在发送请求到后端...', false);
+    generateButton.disabled = true;
+    resultLinkEl.classList.add('hidden'); resultLinkEl.innerHTML = '';
 
-        modal = document.createElement('div');
-        modal.id = 'generatedLinkModal';
-        modal.style.position = 'fixed';
-        modal.style.top = '50%';
-        modal.style.left = '50%';
-        modal.style.transform = 'translate(-50%, -50%)';
-        modal.style.padding = '20px';
-        modal.style.backgroundColor = 'white';
-        modal.style.border = '1px solid #ccc';
-        modal.style.borderRadius = '8px';
-        modal.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
-        modal.style.zIndex = '10001';
-        modal.style.textAlign = 'center';
-        modal.style.minWidth = '300px';
-
-        const linkTextElement = document.createElement('p');
-        linkTextElement.style.marginBottom = '15px';
-        linkTextElement.style.fontSize = '16px';
-        linkTextElement.style.wordBreak = 'break-all'; // Ensure long links wrap
-        linkTextElement.innerHTML = `链接已生成: <br><a href="${link}" target="_blank" style="color: #007bff; text-decoration: underline;">${link}</a>`;
-        modal.appendChild(linkTextElement);
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = '关闭';
-        closeButton.style.padding = '8px 15px';
-        closeButton.style.border = 'none';
-        closeButton.style.borderRadius = '4px';
-        closeButton.style.backgroundColor = '#007bff';
-        closeButton.style.color = 'white';
-        closeButton.style.cursor = 'pointer';
-        closeButton.onclick = () => {
-            if (modal.parentNode) {
-                modal.parentNode.removeChild(modal);
-            }
-        };
-        modal.appendChild(closeButton);
-        document.body.appendChild(modal);
-    }
-
-    // Function to copy text to clipboard
-    function copyToClipboard(text) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'absolute'; 
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length); 
-
-        try {
-            const success = document.execCommand('copy');
-            if (success) {
-                showTemporaryNotification('这段文字已经赋值到粘贴板');
-                console.log('成功复制到剪贴板:', text);
-            } else {
-                showTemporaryNotification('复制到剪贴板失败 (execCommand返回false)', 3000);
-                console.error('execCommand copy returned false.');
-            }
-        } catch (err) {
-            console.error('无法复制到剪贴板:', err);
-            showTemporaryNotification('复制到剪贴板失败', 3000); 
-        }
-        document.body.removeChild(textarea);
-    }
-
-    // Listen for paste events on the code input field
-    if (codeInput) {
-        codeInput.addEventListener('paste', (event) => {
-            console.log('Paste event triggered on codeInput.');
-            event.preventDefault(); 
-            
-            let pastedContent = '';
-            const clipboardData = event.clipboardData || window.clipboardData;
-
-            if (clipboardData) {
-                console.log('Available clipboard types:', clipboardData.types ? Array.from(clipboardData.types) : 'N/A');
-                if (clipboardData.types && Array.from(clipboardData.types).includes('text/html')) {
-                    pastedContent = clipboardData.getData('text/html');
-                    console.log('Pasted as text/html (first 200 chars):', pastedContent.substring(0,200) + (pastedContent.length > 200 ? "..." : ""));
-                } else if (clipboardData.types && Array.from(clipboardData.types).includes('text/plain')) {
-                    pastedContent = clipboardData.getData('text/plain');
-                    console.log('Pasted as text/plain (first 200 chars):', pastedContent.substring(0,200) + (pastedContent.length > 200 ? "..." : ""));
-                } else { 
-                     pastedContent = clipboardData.getData('text'); 
-                     console.log('Pasted as default text (first 200 chars):', pastedContent.substring(0,200) + (pastedContent.length > 200 ? "..." : ""));
-                }
-            } else {
-                console.error('Clipboard data is not available.');
-                showMessage('无法访问剪贴板数据。', 'error');
-                return;
-            }
-            
-            if (!pastedContent || !pastedContent.trim()) {
-                console.warn('Pasted content is empty or whitespace.');
-                showMessage('粘贴的内容为空。', 'warning');
-                codeInput.value = pastedContent; 
-                return; 
-            }
-
-            codeInput.value = pastedContent; 
-
-            let pageTitle = '';
-            try {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(pastedContent, 'text/html');
-                const titleElement = doc.querySelector('title');
-                if (titleElement && titleElement.textContent) {
-                    pageTitle = titleElement.textContent.trim();
-                    console.log('使用 DOMParser 提取的标题:', pageTitle);
-                } else {
-                    console.log('DOMParser 未找到标题, 尝试使用正则表达式。');
-                    const titleMatch = pastedContent.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
-                    if (titleMatch && titleMatch[1]) {
-                        pageTitle = titleMatch[1].trim();
-                        console.log('使用正则表达式提取的标题:', pageTitle);
-                    } else {
-                        console.log('未在粘贴内容中找到标题。');
-                    }
-                }
-            } catch (e) {
-                console.error('提取标题时出错:', e);
-                try {
-                    const titleMatch = pastedContent.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
-                    if (titleMatch && titleMatch[1]) {
-                        pageTitle = titleMatch[1].trim();
-                        console.log('发生错误后，使用正则表达式提取的标题:', pageTitle);
-                    }
-                } catch (regexError) {
-                    console.error('正则表达式提取标题也失败:', regexError);
-                }
-            }
-
-            if (nameInput) {
-                if (pageTitle) {
-                    nameInput.value = pageTitle;
-                } else {
-                    const randomName = '页面-' + Date.now();
-                    nameInput.value = randomName; 
-                    console.log('已生成随机名称:', randomName);
-                }
-            } else {
-                 console.error('名称输入框 (id="name") 未找到。');
-            }
-            
-            if (createBtn) {
-                console.log('尝试自动点击创建按钮。');
-                createBtn.disabled = false; 
-                createBtn.click();
-            } else {
-                console.error('创建按钮 (id="createBtn") 未找到，无法自动点击。');
-                showMessage('创建按钮未找到', 'error');
-            }
-        });
-    } 
-
-    // Event listener for the create button click
-    if (createBtn) {
-        createBtn.addEventListener('click', async () => {
-            console.log('创建按钮被点击。');
-            const name = nameInput ? nameInput.value.trim() : '未命名页面';
-            const code = codeInput ? codeInput.value : ''; 
-
-            if (!code) { 
-                showMessage('代码内容不能为空!', 'error');
-                console.warn('创建尝试失败: 代码内容为空。');
-                return;
-            }
-            if (!name) {
-                showMessage('名称不能为空!', 'error');
-                console.warn('创建尝试失败: 名称为空。');
+    chrome.runtime.sendMessage(
+        { type: "GENERATE_CODE", payload: payload, token: authToken },
+        (response) => {
+            // console.log("Response from background:", JSON.stringify(response, null, 2)); // 调试时可以取消注释查看完整响应
+            if (chrome.runtime.lastError) {
+                displayStatus(statusMessageEl, `请求发送失败: ${chrome.runtime.lastError.message}`, true);
+                generateButton.disabled = false;
                 return;
             }
 
-            const timestamp = Date.now().toString();
-            const randomStr = Math.random().toString(36).substring(2, 12);
-            const secret = 'secret'; 
-            const signInput = timestamp + randomStr + secret;
-            const sign = CryptoJS.MD5(signInput).toString();
-            console.log(`签名参数: timestamp=${timestamp}, random_str=${randomStr}, secret=${secret}, combined=${signInput}, sign=${sign}`);
+            if (response && response.success) {
+                const apiResponse = response.data; // apiResponse 是后端返回的完整JSON对象
 
-            const requestData = {
-                name: name,
-                content: code,
-                timestamp: timestamp,
-                random_str: randomStr,
-                sign: sign,
-            };
-            console.log('发送到API的请求数据 (内容截断显示):', { ...requestData, content: requestData.content.substring(0, 200) + (requestData.content.length > 200 ? "..." : "") });
-
-
-            showMessage('正在创建链接...', 'info');
-            createBtn.disabled = true; 
-
-            try {
-                const response = await fetch('https://api.link3.cc/api/v1/links_custom', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(requestData),
-                });
-                console.log('API响应状态:', response.status);
-                const responseText = await response.text(); 
-                console.log('API原始响应文本:', responseText);
-
-                let data;
-                try {
-                    data = JSON.parse(responseText); 
-                } catch (jsonError) {
-                    console.error('API响应不是有效的JSON:', jsonError);
-                    showMessage(`创建链接失败: 服务器响应格式错误。 (${response.status})`, 'error');
-                    createBtn.disabled = false;
-                    return;
-                }
-
-                if (response.ok && data && data.url) {
-                    showMessage('链接创建成功!', 'success');
-                    console.log('API成功响应:', data);
+                // 检查顶层API响应是否成功
+                if (apiResponse && apiResponse.code === 200 && apiResponse.data) {
+                    const outerData = apiResponse.data; // 这是 { "code": 200, "message": "HTML page generated successfully.", "data": { ... } }
                     
-                    const generatedLink = data.url;
-                    const promptText = `我把上面的html页面发布到了${generatedLink}链接地址${generatedLink}`;
+                    // 显示来自第二层级的消息，例如 "HTML page generated successfully."
+                    displayStatus(statusMessageEl, outerData.message || apiResponse.message || '操作成功！', false);
 
-                    showLinkModal(generatedLink);
-                    copyToClipboard(promptText);
+                    const actualResultData = outerData.data; // 这是 { "type": "html", "fileName": "...", "url": "...", ... }
 
-                } else {
-                    const errorMessage = data.message || data.msg || `创建链接失败，请稍后再试。 (状态码: ${response.status})`;
-                    showMessage(errorMessage, 'error');
-                    console.error('API错误响应:', data);
+                    let outputHtml = '';
+                    if (actualResultData && actualResultData.type === 'html' && actualResultData.url) {
+                        // 使用 fileName 作为链接文本（如果存在），否则使用 URL 本身
+                        const linkText = actualResultData.fileName || actualResultData.url;
+                        outputHtml = `<p>HTML页面: <a href="${actualResultData.url}" target="_blank" title="${actualResultData.url}">${linkText}</a></p>`;
+                    } else if (actualResultData && actualResultData.type === 'magic-api' && actualResultData.apiPath) {
+                        const fullApiUrl = `https://jiesuan.jujia618.com${actualResultData.apiPath}`;
+                        const linkText = actualResultData.apiPath;
+                        const httpMethodDisplay = actualResultData.httpMethod ? ` (${actualResultData.httpMethod})` : '';
+                        outputHtml = `<p>Magic-API: <a href="${fullApiUrl}" target="_blank" title="${fullApiUrl}">${linkText}</a>${httpMethodDisplay}</p>`;
+                    } else {
+                        // 如果结果类型未知或数据不完整
+                        // displayStatus(statusMessageEl, outerData.message && !actualResultData ? outerData.message : '结果类型未知或数据不完整。', true);
+                        if (outerData.message && (!actualResultData || !actualResultData.type)) {
+                             // 如果有第二层消息但没有更内层的数据或类型，可能本身就是最终消息
+                        } else {
+                             displayStatus(statusMessageEl, '结果类型未知或数据不完整。', true);
+                        }
+                    }
+
+                    resultLinkEl.innerHTML = outputHtml; //
+                    if (outputHtml) {
+                        resultLinkEl.classList.remove('hidden'); //
+                    } else {
+                        resultLinkEl.classList.add('hidden'); // 确保如果没有内容则隐藏
+                    }
+
+                } else { // 顶层 API 响应指示问题 (例如 apiResponse.code !== 200 或 apiResponse.data 不存在)
+                    const errorMsg = apiResponse ? (apiResponse.message || '未知API响应错误') : '未收到API响应';
+                    const errorCode = apiResponse ? apiResponse.code : 'N/A';
+                    displayStatus(statusMessageEl, `API调用失败: ${errorMsg} (Code: ${errorCode})`, true);
+                    resultLinkEl.classList.add('hidden');
+                    resultLinkEl.innerHTML = '';
                 }
-            } catch (error) {
-                showMessage('创建链接时发生网络错误或脚本错误。', 'error');
-                console.error('Fetch或脚本执行错误:', error);
-            } finally {
-                createBtn.disabled = false; 
+            } else { // response.success 为 false, 或 background.js 通信层面出错
+                displayStatus(statusMessageEl, `生成失败: ${response ? response.errorMessage : '未知后端或插件通信错误'}`, true);
+                resultLinkEl.classList.add('hidden');
+                resultLinkEl.innerHTML = '';
             }
-        });
-    } 
+            generateButton.disabled = false;
+        }
+    );
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === "CODE_CAPTURED_FROM_PAGE" && capturedCodeEl && request.code) {
+        capturedCodeEl.value = request.code;
+        const code = request.code.toLowerCase();
+        const isHtml = /<html|<\!doctype\s+html/i.test(code);
+        const isMagicApi = /\/\/\s*magic-api:|db\.|request\./i.test(code);
+        if (isHtml) codeTypeEl.value = "html";
+        else if (isMagicApi) codeTypeEl.value = "magic-api";
+        toggleMagicApiOptions();
+        sendResponse({status: "Code received and processed by popup"});
+    }
 });
+
+document.addEventListener('DOMContentLoaded', () => {
+    chrome.storage.local.get(['authToken'], (result) => {
+        if (result.authToken) {
+            authToken = result.authToken;
+            displayStatus(loginStatusEl, '已登录 (Token已加载)。', false);
+        } else {
+            displayStatus(loginStatusEl, '未登录。请先登录。', true);
+        }
+    });
+    toggleMagicApiOptions();
+});
+codeTypeEl.addEventListener('change', toggleMagicApiOptions);
+generateButton.addEventListener('click', handleGenerateCode);
+loginButton.addEventListener('click', handleLogin);
