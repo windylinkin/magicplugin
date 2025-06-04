@@ -12,10 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
             messageDiv.textContent = text;
             messageDiv.className = type; // Apply 'success' or 'error' class for styling
             messageDiv.style.display = 'block';
-            console.log(\`Message to user: ${text} (type: ${type})\`);
+            console.log(`Message to user: ${text} (type: ${type})`);
         } else {
             // Fallback if messageDiv is not found in the HTML
-            console.log(\`Message area (id='message') not found. UI Message: ${text} (type: ${type})\`);
+            console.log(`Message area (id='message') not found. UI Message: ${text} (type: ${type})`);
         }
     }
     
@@ -29,13 +29,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (!nameInput) {
         console.warn("元素 'nameInput' (id='name') 未在 popup.html 中找到。将无法自动填充名称。");
-        // Not returning, as the app might still be partially usable or the user might input name manually.
     }
     if (!createBtn) {
         const errorMsg = "关键元素 'createBtn' (id='createBtn') 未在 popup.html 中找到。创建链接功能将无法工作。";
         console.error(errorMsg);
         if (messageDiv) showMessage("错误: 创建按钮未找到!", 'error');
-        // Not returning, paste might still work for viewing code.
     }
     if (!messageDiv) {
         console.warn("元素 'messageDiv' (id='message') 未在 popup.html 中找到。状态消息将仅输出到控制台。");
@@ -105,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         linkTextElement.style.marginBottom = '15px';
         linkTextElement.style.fontSize = '16px';
         linkTextElement.style.wordBreak = 'break-all'; // Ensure long links wrap
-        linkTextElement.innerHTML = \`链接已生成: <br><a href="${link}" target="_blank" style="color: #007bff; text-decoration: underline;">${link}</a>\`;
+        linkTextElement.innerHTML = `链接已生成: <br><a href="${link}" target="_blank" style="color: #007bff; text-decoration: underline;">${link}</a>`;
         modal.appendChild(linkTextElement);
 
         const closeButton = document.createElement('button');
@@ -152,7 +150,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Listen for paste events on the code input field
-    // This check is already done above, but for clarity:
     if (codeInput) {
         codeInput.addEventListener('paste', (event) => {
             console.log('Paste event triggered on codeInput.');
@@ -163,7 +160,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (clipboardData) {
                 console.log('Available clipboard types:', clipboardData.types ? Array.from(clipboardData.types) : 'N/A');
-                // Try to get HTML content first
                 if (clipboardData.types && Array.from(clipboardData.types).includes('text/html')) {
                     pastedContent = clipboardData.getData('text/html');
                     console.log('Pasted as text/html (first 200 chars):', pastedContent.substring(0,200) + (pastedContent.length > 200 ? "..." : ""));
@@ -171,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     pastedContent = clipboardData.getData('text/plain');
                     console.log('Pasted as text/plain (first 200 chars):', pastedContent.substring(0,200) + (pastedContent.length > 200 ? "..." : ""));
                 } else { 
-                     pastedContent = clipboardData.getData('text'); // Fallback for older browsers or different clipboard data
+                     pastedContent = clipboardData.getData('text'); 
                      console.log('Pasted as default text (first 200 chars):', pastedContent.substring(0,200) + (pastedContent.length > 200 ? "..." : ""));
                 }
             } else {
@@ -183,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!pastedContent || !pastedContent.trim()) {
                 console.warn('Pasted content is empty or whitespace.');
                 showMessage('粘贴的内容为空。', 'warning');
-                codeInput.value = pastedContent; // Show what was pasted (even if empty)
+                codeInput.value = pastedContent; 
                 return; 
             }
 
@@ -209,7 +205,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (e) {
                 console.error('提取标题时出错:', e);
-                // Fallback to regex if DOMParser itself throws an error (e.g. extremely malformed HTML)
                 try {
                     const titleMatch = pastedContent.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
                     if (titleMatch && titleMatch[1]) {
@@ -235,7 +230,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (createBtn) {
                 console.log('尝试自动点击创建按钮。');
-                // Ensure button is enabled before clicking, in case a previous API call failed and left it disabled.
                 createBtn.disabled = false; 
                 createBtn.click();
             } else {
@@ -244,17 +238,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     } 
-    // else case for codeInput not found is handled by the initial check.
-
 
     // Event listener for the create button click
     if (createBtn) {
         createBtn.addEventListener('click', async () => {
             console.log('创建按钮被点击。');
             const name = nameInput ? nameInput.value.trim() : '未命名页面';
-            const code = codeInput ? codeInput.value : ''; // Don't trim code, whitespace might be intentional
+            const code = codeInput ? codeInput.value : ''; 
 
-            if (!code) { // Check if code is empty string, null, or undefined.
+            if (!code) { 
                 showMessage('代码内容不能为空!', 'error');
                 console.warn('创建尝试失败: 代码内容为空。');
                 return;
@@ -270,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const secret = 'secret'; 
             const signInput = timestamp + randomStr + secret;
             const sign = CryptoJS.MD5(signInput).toString();
-            console.log(\`签名参数: timestamp=${timestamp}, random_str=${randomStr}, secret=${secret}, combined=${signInput}, sign=${sign}\`);
+            console.log(`签名参数: timestamp=${timestamp}, random_str=${randomStr}, secret=${secret}, combined=${signInput}, sign=${sign}`);
 
             const requestData = {
                 name: name,
@@ -279,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 random_str: randomStr,
                 sign: sign,
             };
-            console.log('发送到API的请求数据:', { ...requestData, content: requestData.content.substring(0, 200) + (requestData.content.length > 200 ? "..." : "") });
+            console.log('发送到API的请求数据 (内容截断显示):', { ...requestData, content: requestData.content.substring(0, 200) + (requestData.content.length > 200 ? "..." : "") });
 
 
             showMessage('正在创建链接...', 'info');
@@ -294,26 +286,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify(requestData),
                 });
                 console.log('API响应状态:', response.status);
-                const responseText = await response.text(); // Get raw response text for debugging
+                const responseText = await response.text(); 
                 console.log('API原始响应文本:', responseText);
 
                 let data;
                 try {
-                    data = JSON.parse(responseText); // Try to parse as JSON
+                    data = JSON.parse(responseText); 
                 } catch (jsonError) {
                     console.error('API响应不是有效的JSON:', jsonError);
-                    showMessage(\`创建链接失败: 服务器响应格式错误。 (${response.status})\`, 'error');
+                    showMessage(`创建链接失败: 服务器响应格式错误。 (${response.status})`, 'error');
                     createBtn.disabled = false;
                     return;
                 }
-
 
                 if (response.ok && data && data.url) {
                     showMessage('链接创建成功!', 'success');
                     console.log('API成功响应:', data);
                     
                     const generatedLink = data.url;
-                    const promptText = \`我把上面的html页面发布到了${generatedLink}链接地址${generatedLink}\`;
+                    const promptText = `我把上面的html页面发布到了${generatedLink}链接地址${generatedLink}`;
 
                     showLinkModal(generatedLink);
                     copyToClipboard(promptText);
@@ -331,5 +322,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     } 
-    // else case for createBtn not found is handled by the initial check.
 });
